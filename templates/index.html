@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeteksiAirSungai — Analisis Citra Air Sungai</title>
+  <meta name="description" content="Analisis citra air sungai dengan preprocessing, segmentasi HSV, dan visualisasi false color.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3C12 9 6 14 6 20a10 10 0 0 0 20 0C26 14 20 9 16 3Z" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M10 21c2.5 2 5 2 7.5 0s5-2 7.5 0" fill="none" stroke="currentColor" stroke-width="2"/></svg></span>
+      <span>Deteksi<span class="brand-accent">AirSungai</span></span>
+    </a>
+    <nav><a href="#cara-kerja">Cara kerja</a><a href="#analisis">Analisis</a><a href="#tentang">Tentang</a></nav>
+    <a class="nav-cta" href="#analisis">Mulai analisis <span>↗</span></a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span> ANALISIS CITRA BERBASIS KOMPUTER</div>
+        <h1>Kenali kondisi air sungai <span>dari citranya.</span></h1>
+        <p>Unggah foto sungai, jalankan segmentasi warna HSV, dan lihat hasil pemrosesan citra dalam satu dashboard interaktif.</p>
+        <div class="hero-points"><span>✓ Tanpa instalasi aplikasi tambahan</span><span>✓ Kontrol parameter analisis</span></div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
+        <div class="art-card"><div class="art-top"><span></span><span></span><span></span><b>LIVE IMAGE ANALYSIS</b></div><div class="river-art"><div class="river-shine"></div><div class="river-bank"></div></div><div class="art-bottom"><span>HSV SEGMENTATION</span><strong>ACTIVE</strong></div></div>
+        <div class="float-chip chip-top">◉ <span>Computer Vision</span></div><div class="float-chip chip-bottom">↗ <span>Visual analysis</span></div>
+      </div>
+    </section>
+
+    <section class="workspace" id="analisis">
+      <div class="section-heading">
+        <div><div class="eyebrow">WORKSPACE</div><h2>Mulai analisis gambar</h2><p>Pilih gambar dari dataset atau unggah foto sungai dari perangkatmu.</p></div>
+        <div class="secure-note"><span>✳</span> Pemrosesan lokal melalui server aplikasi</div>
+      </div>
+
+      <div class="upload-layout">
+        <div class="upload-card">
+          <div class="tabs"><button class="tab active" id="tab-upload">Unggah gambar</button><button class="tab" id="tab-dataset">Pilih dari dataset</button></div>
+          <div id="upload-pane">
+            <label class="dropzone" id="dropzone" for="file-input">
+              <input id="file-input" type="file" accept=".jpg,.jpeg,.png,.bmp,.tif,.tiff,.webp">
+              <span class="upload-icon"><svg viewBox="0 0 32 32"><path d="M16 21V5m0 0-6 6m6-6 6 6M6 20v6h20v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <strong>Tarik dan letakkan gambar di sini</strong>
+              <span class="muted">atau klik untuk memilih file dari perangkat</span>
+              <span class="file-types">JPG · PNG · WEBP · TIFF · Maks. 16 MB</span>
+            </label>
+            <div class="selected-file hidden" id="selected-file"><span class="file-icon">▧</span><div><strong id="file-name">image.jpg</strong><small id="file-size">Siap dianalisis</small></div><button id="remove-file" title="Hapus gambar">×</button></div>
+          </div>
+          <div id="dataset-pane" class="hidden dataset-pane">
+            <label for="dataset-select">Pilih gambar dari folder dataset</label>
+            <select id="dataset-select"><option value="">Memuat daftar gambar...</option></select>
+            <button class="text-button" id="refresh-dataset">↻ Perbarui daftar gambar</button>
+            <p class="muted small">Gambar dibaca dari folder <code>dataset/</code> beserta subfoldernya.</p>
+          </div>
+          <div class="upload-footer"><div class="privacy"><span>♧</span> File diproses oleh aplikasi ini</div><button class="primary-btn" id="analyze-btn" disabled>Mulai analisis <span>→</span></button></div>
+          <div class="status" id="status" role="status">Pilih gambar untuk memulai.</div>
+        </div>
+        <aside class="how-card" id="cara-kerja"><div class="how-icon">⌁</div><h3>Bagaimana cara kerjanya?</h3><ol><li><b>Unggah foto</b><span>Pilih gambar permukaan air sungai.</span></li><li><b>Atur parameter</b><span>Sesuaikan filter dan rentang warna HSV.</span></li><li><b>Lihat hasil</b><span>Bandingkan citra asli, mask, area air, dan false color.</span></li></ol><div class="tip"><b>Tips</b><span>Gunakan foto dengan pencahayaan cukup dan area sungai terlihat jelas.</span></div></aside>
+      </div>
+
+      <section class="results hidden" id="results">
+        <div class="results-title"><div><div class="eyebrow">HASIL PEMROSESAN</div><h2>Hasil analisis citra</h2><p id="image-meta">—</p></div><span class="done-pill"><i></i> Analisis selesai</span></div>
+        <div class="result-grid">
+          <article class="image-result"><div class="image-label"><span>01</span><b>Citra asli</b></div><img id="img-original" alt="Citra asli sungai"></article>
+          <article class="image-result"><div class="image-label"><span>02</span><b>Mask segmentasi</b></div><img id="img-mask" alt="Mask hasil segmentasi"></article>
+          <article class="image-result"><div class="image-label"><span>03</span><b>Area air saja</b></div><img id="img-water" alt="Area air hasil ekstraksi"></article>
+          <article class="image-result"><div class="image-label"><span>04</span><b>False color</b></div><img id="img-false" alt="Visualisasi false color"></article>
+        </div>
+
+        <div class="analysis-lower">
+          <section class="control-card">
+            <div class="card-heading"><div><div class="eyebrow">PENGATURAN</div><h3>Parameter pemrosesan</h3></div><button class="reset-btn" id="reset-btn">Reset default ↺</button></div>
+            <div class="control-group"><label>Preprocessing</label><div class="inline-controls"><select id="filter"><option>Gaussian Blur</option><option>Median Filter</option></select><div class="number-control"><span>Ukuran filter</span><input type="number" id="filter-size" min="1" max="31" step="2" value="5"></div></div></div>
+            <div class="control-group"><label>Batas segmentasi HSV</label><div class="range-grid">
+              <div class="range-item"><label for="h-min">H minimum <output id="h-min-out">90</output></label><input id="h-min" type="range" min="0" max="179" value="90"></div>
+              <div class="range-item"><label for="h-max">H maksimum <output id="h-max-out">140</output></label><input id="h-max" type="range" min="0" max="179" value="140"></div>
+              <div class="range-item"><label for="s-min">S minimum <output id="s-min-out">30</output></label><input id="s-min" type="range" min="0" max="255" value="30"></div>
+              <div class="range-item"><label for="s-max">S maksimum <output id="s-max-out">255</output></label><input id="s-max" type="range" min="0" max="255" value="255"></div>
+              <div class="range-item"><label for="v-min">V minimum <output id="v-min-out">30</output></label><input id="v-min" type="range" min="0" max="255" value="30"></div>
+              <div class="range-item"><label for="v-max">V maksimum <output id="v-max-out">200</output></label><input id="v-max" type="range" min="0" max="255" value="200"></div>
+            </div></div>
+            <div class="control-group"><label>Morfologi & false color</label><div class="inline-controls"><div class="number-control"><span>Kernel morfologi</span><input type="number" id="kernel" min="1" max="15" step="2" value="5"></div><select id="cmap"><option value="COLORMAP_JET">JET</option><option value="COLORMAP_TURBO">TURBO</option><option value="COLORMAP_RAINBOW">RAINBOW</option></select></div></div>
+            <div class="toggle-row"><label><input type="checkbox" id="normalize" checked> Regangkan kontras dalam mask</label><label><input type="checkbox" id="invert" checked> Balik skala false color</label></div>
+            <button class="secondary-btn" id="reprocess-btn">Terapkan pengaturan <span>→</span></button>
+            <p class="small muted">Perubahan parameter diterapkan saat tombol di atas ditekan.</p>
+          </section>
+          <section class="stats-card">
+            <div class="eyebrow">RINGKASAN CITRA</div><h3>Statistik area terdeteksi</h3>
+            <div class="stat-highlight"><div><span>Persentase area terdeteksi</span><strong id="stat-percent">0.00%</strong></div><div class="progress"><i id="stat-progress"></i></div><small id="stat-pixels">0 dari 0 pixel</small></div>
+            <div class="stat-list"><div><span>Rata-rata Red</span><b id="stat-r">—</b></div><div><span>Rata-rata Green</span><b id="stat-g">—</b></div><div><span>Rata-rata Blue</span><b id="stat-b">—</b></div><div><span>Brightness</span><b id="stat-brightness">—</b></div></div>
+            <div class="interpretation"><span class="interpretation-dot" id="interpretation-dot"></span><div><small>Interpretasi visual berbasis brightness</small><b id="stat-interpretation">Menunggu analisis</b></div></div>
+            <p class="disclaimer">Catatan: hasil ini merupakan indikasi visual dari citra berdasarkan aturan brightness pada kode. Hasil bukan pengukuran laboratorium dan tidak dapat menggantikan uji pH, TSS, BOD, COD, atau parameter baku mutu air.</p>
+          </section>
+        </div>
+      </section>
+    </section>
+
+    <section class="process-section" id="tentang"><div class="eyebrow">ALUR ANALISIS</div><h2>Dari foto menjadi informasi visual</h2><div class="process-grid"><div><span>01</span><h3>Preprocessing</h3><p>Gaussian Blur atau Median Filter untuk membantu mengurangi noise pada citra.</p></div><div><span>02</span><h3>Segmentasi HSV</h3><p>Memisahkan piksel berdasarkan rentang Hue, Saturation, dan Value.</p></div><div><span>03</span><h3>Morfologi</h3><p>Operasi opening dan closing untuk mengurangi bintik serta menutup lubang kecil.</p></div><div><span>04</span><h3>Visualisasi</h3><p>Ekstraksi area terpilih, perhitungan statistik RGB, dan pemetaan false color.</p></div></div></section>
+  </main>
+  <footer><a class="brand" href="/"><span class="brand-mark">≈</span><span>WebDeteksi<span class="brand-accent">AirSungai</span></span></a><span>Eksperimen analisis citra air sungai · Flask & OpenCV</span></footer>
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

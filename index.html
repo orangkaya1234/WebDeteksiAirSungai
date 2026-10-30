@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Analisis Kualitas Air Sungai</title>
+<style>
+:root{--bg:#f6f8fa;--card:#fff;--tx:#1f2328;--mu:#59636e;--bd:#d1d9e0;--ac:#0b6bcb;--ok:#1a7f37;--md:#9a6700;--bad:#cf222e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1117;--card:#161b22;--tx:#e6edf3;--mu:#9198a1;--bd:#30363d;--ac:#4493f8;--ok:#3fb950;--md:#d29922;--bad:#f85149;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0d1117;--card:#161b22;--tx:#e6edf3;--mu:#9198a1;--bd:#30363d;--ac:#4493f8;--ok:#3fb950;--md:#d29922;--bad:#f85149;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:0}h3{margin:12px 0 6px;font-size:.95rem}
+.mu{color:var(--mu);font-size:.9rem}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-top:14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn,button,select{font:inherit;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:6px 12px;cursor:pointer}
+.btn.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+select{max-width:100%;flex:1;min-width:160px}
+.layout{display:grid;grid-template-columns:300px 1fr;gap:14px;align-items:start}
+.layout .card{margin-top:14px}
+.sl{display:grid;grid-template-columns:90px 1fr 36px;gap:6px;align-items:center;font-size:.88rem}
+.sl input{width:100%}.sl output{text-align:right;font-variant-numeric:tabular-nums}
+.ctl select{width:100%;margin-bottom:6px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+figure{margin:0;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px}
+figcaption{font-size:.85rem;font-weight:600;margin-bottom:6px}
+canvas{width:100%;height:auto;display:block;border-radius:6px;background:#000}
+table{border-collapse:collapse;width:100%}td{padding:4px 8px;border-bottom:1px solid var(--bd)}
+#st{font-weight:600}
+@media (max-width:820px){.layout{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<h1>🌊 Analisis Kualitas Air Sungai</h1>
+<p class="mu">Segmentasi HSV, morfologi, dan false color. Semua diproses di browser Anda; gambar tidak dikirim ke server mana pun.</p>
+
+<section class="card">
+  <div class="row">
+    <label class="btn p">📁 Pilih Folder Dataset<input id="fdir" type="file" webkitdirectory multiple hidden></label>
+    <label class="btn">🖼️ Pilih Gambar<input id="ffile" type="file" accept="image/*" multiple hidden></label>
+    <button id="demo">🧪 Gambar Contoh</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="prev">◀</button><select id="sel"></select><button id="next">▶</button>
+  </div>
+  <p id="info" class="mu" style="margin:8px 0 0">Belum ada gambar. Pilih folder dataset Anda, atau seret dan lepas gambar ke halaman ini.</p>
+</section>
+
+<div class="layout">
+  <aside class="card ctl" id="ctl"></aside>
+  <section>
+    <div class="grid">
+      <figure><figcaption>1. Citra Asli (RGB)</figcaption><canvas id="c0"></canvas></figure>
+      <figure><figcaption>2. Mask Hitam-Putih (Segmentasi)</figcaption><canvas id="c1"></canvas></figure>
+      <figure><figcaption>3. Area Air Saja (Bitwise AND)</figcaption><canvas id="c2"></canvas></figure>
+      <figure><figcaption id="cap3">4. False Color</figcaption><canvas id="c3"></canvas></figure>
+    </div>
+  </section>
+</div>
+
+<section class="card" id="stats"><h3 style="margin-top:0">📊 Analisis Statistik</h3><div id="sbody" class="mu">Menunggu gambar...</div></section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const MAXD=480;                       // sisi terpanjang gambar diproses
+let files=[],base=null,cache={key:"",blur:null,hsv:null},timer;
+
+// ---------- Kontrol ----------
+const SL=[["hmin","H min",0,179,90,1],["hmax","H max",0,179,140,1],["smin","S min",0,255,30,1],["smax","S max",0,255,255,1],["vmin","V min",0,255,30,1],["vmax","V max",0,255,200,1],["kern","Kernel morfologi",1,15,5,2],["kf","Ukuran filter",1,15,5,2]];
+let h='<h3 style="margin-top:0">🎛️ Panel Kontrol</h3><h3>Preprocessing</h3><select id="filt"><option>Gaussian Blur</option><option>Median Filter</option></select>';
+const slRow=s=>`<div class="sl"><span>${s[1]}</span><input type="range" id="${s[0]}" min="${s[2]}" max="${s[3]}" step="${s[5]}" value="${s[4]}"><output id="o_${s[0]}">${s[4]}</output></div>`;
+h+=slRow(SL[7])+'<h3>Batas HSV (skala OpenCV)</h3>'+SL.slice(0,6).map(slRow).join('')+'<h3>Morfologi</h3>'+slRow(SL[6]);
+h+='<h3>False Color</h3><select id="cmap"><option>COLORMAP_JET</option><option>COLORMAP_TURBO</option><option>COLORMAP_RAINBOW</option></select>';
+h+='<label class="mu"><input type="checkbox" id="norm" checked> Regangkan kontras dalam mask</label><br><label class="mu"><input type="checkbox" id="inv" checked> Biru = jernih (balik skala)</label>';
+h+='<p id="st" class="mu">Menunggu gambar...</p>';
+$("ctl").innerHTML=h;
+$("ctl").querySelectorAll("input,select").forEach(e=>e.addEventListener("input",()=>{const o=$("o_"+e.id);if(o)o.textContent=e.value;schedule()}));
+
+// ---------- Colormap (disusun biru -> merah) ----------
+const cl=v=>Math.max(0,Math.min(255,Math.round(v*255)));
+const LUT={};
+LUT.COLORMAP_JET=Array.from({length:256},(_,i)=>{const t=i/255,f=x=>Math.max(0,Math.min(1,1.5-Math.abs(4*t-x)));return[cl(f(3)),cl(f(2)),cl(f(1))]});
+LUT.COLORMAP_TURBO=Array.from({length:256},(_,i)=>{const t=i/255,p=(a)=>a.reduceRight((s,c)=>s*t+c,0);
+ return[cl(p([.13572138,4.6153926,-42.66032258,132.13108234,-152.94239396,59.28637943])),cl(p([.09140261,2.19418839,4.84296658,-14.18503333,4.27729857,2.82956604])),cl(p([.1066733,12.64194608,-60.58204836,110.36276771,-89.90310912,27.34824973]))]});
+LUT.COLORMAP_RAINBOW=Array.from({length:256},(_,i)=>{const hu=(1-i/255)*240/60,x=1-Math.abs(hu%2-1);let r=0,g=0,b=0;
+ if(hu<1)[r,g,b]=[1,x,0];else if(hu<2)[r,g,b]=[x,1,0];else if(hu<3)[r,g,b]=[0,1,x];else[r,g,b]=[0,x,1];return[cl(r),cl(g),cl(b)]});
+
+// ---------- Pengolahan citra ----------
+function gauss(src,w,h,k){ // Gaussian Blur terpisah (sigma ala OpenCV)
+  if(k<=1)return src.slice();
+  const s=.3*((k-1)*.5-1)+.8,r=k>>1,ker=[];let sum=0;
+  for(let i=-r;i<=r;i++){const v=Math.exp(-i*i/(2*s*s));ker.push(v);sum+=v}
+  for(let i=0;i<k;i++)ker[i]/=sum;
+  const tmp=new Float32Array(src.length),out=new Uint8ClampedArray(src.length);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)for(let c=0;c<3;c++){let a=0;
+    for(let i=-r;i<=r;i++){const xx=Math.min(w-1,Math.max(0,x+i));a+=src[(y*w+xx)*4+c]*ker[i+r]}tmp[(y*w+x)*4+c]=a}
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){for(let c=0;c<3;c++){let a=0;
+    for(let i=-r;i<=r;i++){const yy=Math.min(h-1,Math.max(0,y+i));a+=tmp[(yy*w+x)*4+c]*ker[i+r]}out[(y*w+x)*4+c]=a}out[(y*w+x)*4+3]=255}
+  return out;
+}
+function median(src,w,h,k){ // Median Filter
+  if(k<=1)return src.slice();
+  const r=k>>1,out=new Uint8ClampedArray(src.length),buf=new Uint8Array(k*k);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){for(let c=0;c<3;c++){let n=0;
+    for(let dy=-r;dy<=r;dy++){const yy=Math.min(h-1,Math.max(0,y+dy));
+      for(let dx=-r;dx<=r;dx++){buf[n++]=src[(yy*w+Math.min(w-1,Math.max(0,x+dx)))*4+c]}}
+    out[(y*w+x)*4+c]=buf.sort()[n>>1]}out[(y*w+x)*4+3]=255}
+  return out;
+}
+function toHSV(d,n){ // RGB -> HSV skala OpenCV (H 0-179, S 0-255, V 0-255)
+  const H=new Uint8Array(n),S=new Uint8Array(n),V=new Uint8Array(n);
+  for(let i=0;i<n;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2],mx=Math.max(r,g,b),df=mx-Math.min(r,g,b);let hh=0;
+    if(df){hh=mx===r?60*(g-b)/df:mx===g?120+60*(b-r)/df:240+60*(r-g)/df;if(hh<0)hh+=360}
+    H[i]=Math.round(hh/2)%180;S[i]=mx?Math.round(255*df/mx):0;V[i]=mx}
+  return{H,S,V};
+}
+function morph(m,w,h,off,erode){ // erosi / dilasi dengan kernel elips
+  const o=new Uint8Array(m.length);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let v=erode?1:0;
+    for(let j=0;j<off.length;j+=2){const xx=x+off[j],yy=y+off[j+1];if(xx<0||yy<0||xx>=w||yy>=h)continue;
+      const p=m[yy*w+xx];if(erode){if(!p){v=0;break}}else if(p){v=1;break}}
+    o[y*w+x]=v}
+  return o;
+}
+function ellipse(k){const r=k>>1,o=[];for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++)if(!r||(dx*dx+dy*dy)/(r*r)<=1.0001)o.push(dx,dy);return o}
+
+// ---------- Pipeline ----------
+function schedule(){clearTimeout(timer);timer=setTimeout(run,80)}
+function setSt(t,c){const e=$("st");e.textContent=t;e.style.color=c||""}
+function show(id,arr,w,h){const c=$(id);c.width=w;c.height=h;c.getContext("2d").putImageData(new ImageData(arr,w,h),0,0)}
+const v=id=>+$(id).value;
+
+function run(){
+  if(!base)return;
+  if(v("hmin")>v("hmax")||v("smin")>v("smax")||v("vmin")>v("vmax")){setSt("⚠️ Nilai MIN tidak boleh lebih besar dari MAX.","var(--bad)");return}
+  setSt("⏳ Memproses gambar...","var(--ac)");
+  setTimeout(()=>{try{
+    const {w,h,d}=base,n=w*h,key=$("filt").value+v("kf");
+    // a. Preprocessing (di-cache selama filter tidak berubah)
+    if(cache.key!==key||cache.base!==base){const b=$("filt").value==="Median Filter"?median(d,w,h,v("kf")):gauss(d,w,h,v("kf"));cache={key,base,blur:b,hsv:toHSV(b,n)}}
+    // b. Segmentasi: inRange HSV, lalu Opening dan Closing
+    const {H,S,V}=cache.hsv;let m=new Uint8Array(n);
+    const a=[v("hmin"),v("hmax"),v("smin"),v("smax"),v("vmin"),v("vmax")];
+    for(let i=0;i<n;i++)m[i]=(H[i]>=a[0]&&H[i]<=a[1]&&S[i]>=a[2]&&S[i]<=a[3]&&V[i]>=a[4]&&V[i]<=a[5])?1:0;
+    const off=ellipse(v("kern"));
+    m=morph(morph(m,w,h,off,true),w,h,off,false);   // opening
+    m=morph(morph(m,w,h,off,false),w,h,off,true);   // closing
+    // c. Ekstraksi fitur dan false color
+    const mk=new Uint8ClampedArray(n*4),air=new Uint8ClampedArray(n*4),fc=new Uint8ClampedArray(n*4),gr=new Uint8Array(n);
+    let cnt=0,sr=0,sg=0,sb=0,gmin=255,gmax=0;
+    for(let i=0;i<n;i++){const p=i*4;mk[p+3]=air[p+3]=fc[p+3]=255;
+      if(m[i]){cnt++;mk[p]=mk[p+1]=mk[p+2]=255;const r=d[p],g=d[p+1],b=d[p+2];air[p]=r;air[p+1]=g;air[p+2]=b;sr+=r;sg+=g;sb+=b;
+        const gy=Math.round(.299*r+.587*g+.114*b);gr[i]=gy;if(gy<gmin)gmin=gy;if(gy>gmax)gmax=gy}}
+    const lut=LUT[$("cmap").value],nm=$("norm").checked&&gmax>gmin,iv=$("inv").checked;
+    for(let i=0;i<n;i++)if(m[i]){let g=gr[i];if(nm)g=Math.round((g-gmin)/(gmax-gmin)*255);if(iv)g=255-g;const c=lut[g],p=i*4;fc[p]=c[0];fc[p+1]=c[1];fc[p+2]=c[2]}
+    // d. Visualisasi grid 2x2
+    show("c0",d,w,h);show("c1",mk,w,h);show("c2",air,w,h);show("c3",fc,w,h);
+    $("cap3").textContent="4. False Color ("+$("cmap").value.replace("COLORMAP_","")+") - "+(iv?"biru = jernih, merah = keruh":"biru = gelap, merah = terang");
+    stats(cnt,n,sr,sg,sb);
+    setSt("✅ Selesai.","var(--ok)");
+  }catch(e){setSt("❌ Error: "+e.message,"var(--bad)")}},20);
+}
+
+function stats(cnt,n,sr,sg,sb){
+  if(!cnt){$("sbody").innerHTML="Area air tidak terdeteksi. Sesuaikan slider HSV.";return}
+  const r=sr/cnt,g=sg/cnt,b=sb/cnt,br=(r+g+b)/3;
+  const [t,c]=br>150?["Cenderung Jernih","var(--ok)"]:br>=80?["Cenderung Sedang","var(--md)"]:["Cenderung Keruh","var(--bad)"];
+  $("sbody").innerHTML=`<table>
+  <tr><td>Persentase area air</td><td><b>${(cnt/n*100).toFixed(2)}%</b> (${cnt.toLocaleString("id-ID")} dari ${n.toLocaleString("id-ID")} pixel)</td></tr>
+  <tr><td>Rata-rata Red</td><td>${r.toFixed(2)}</td></tr><tr><td>Rata-rata Green</td><td>${g.toFixed(2)}</td></tr><tr><td>Rata-rata Blue</td><td>${b.toFixed(2)}</td></tr>
+  <tr><td>Brightness rata-rata</td><td>${br.toFixed(2)} (skala 0-255)</td></tr>
+  <tr><td>Interpretasi kualitas</td><td><b style="color:${c}">${t}</b></td></tr></table>
+  <p class="mu" style="margin:8px 0 0">Kriteria: lebih dari 150 = Jernih, 80 sampai 150 = Sedang, kurang dari 80 = Keruh.</p>`;
+}
+
+// ---------- Memuat gambar ----------
+function setBase(src,sw,sh,name,ow,oh){
+  const k=Math.min(1,MAXD/Math.max(sw,sh)),w=Math.round(sw*k),h=Math.round(sh*k);
+  const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d",{willReadFrequently:true});
+  x.drawImage(src,0,0,w,h);base={w,h,d:x.getImageData(0,0,w,h).data};
+  $("info").innerHTML=`<b>${name}</b> | Asli: ${ow} x ${oh} | Diproses: ${w} x ${h} x 3 (lebar x tinggi x channel)`;
+  run();
+}
+function loadIdx(i){
+  const f=files[i];if(!f)return;$("sel").value=i;setSt("⏳ Memuat gambar...","var(--ac)");
+  const img=new Image(),url=URL.createObjectURL(f);
+  img.onload=()=>{setBase(img,img.naturalWidth,img.naturalHeight,f.webkitRelativePath||f.name,img.naturalWidth,img.naturalHeight);URL.revokeObjectURL(url)};
+  img.onerror=()=>{setSt("❌ Gagal membaca gambar ini.","var(--bad)");$("info").textContent="Format file tidak dapat dibuka oleh browser: "+f.name};
+  img.src=url;
+}
+function handleFiles(list){
+  files=[...list].filter(f=>f.type.startsWith("image/")||/\.(jpe?g|png|bmp|webp)$/i.test(f.name))
+    .sort((a,b)=>(a.webkitRelativePath||a.name).localeCompare(b.webkitRelativePath||b.name));
+  if(!files.length){$("info").textContent="⚠️ Tidak ada file gambar yang ditemukan.";return}
+  $("sel").innerHTML=files.map((f,i)=>`<option value="${i}">${f.webkitRelativePath||f.name}</option>`).join("");
+  loadIdx(0);
+}
+$("fdir").onchange=e=>handleFiles(e.target.files);
+$("ffile").onchange=e=>handleFiles(e.target.files);
+$("sel").onchange=e=>loadIdx(+e.target.value);
+$("prev").onclick=()=>{if(files.length)loadIdx((+$("sel").value-1+files.length)%files.length)};
+$("next").onclick=()=>{if(files.length)loadIdx((+$("sel").value+1)%files.length)};
+addEventListener("dragover",e=>e.preventDefault());
+addEventListener("drop",e=>{e.preventDefault();handleFiles(e.dataTransfer.files)});
+
+// Gambar contoh sintetis (sungai biru, tepi hijau)
+$("demo").onclick=()=>{
+  const c=document.createElement("canvas");c.width=480;c.height=320;const x=c.getContext("2d");
+  x.fillStyle="#8fb7d9";x.fillRect(0,0,480,70);
+  x.fillStyle="#2f5d2a";x.fillRect(0,70,480,60);
+  const g=x.createLinearGradient(0,130,0,320);g.addColorStop(0,"#3b86b8");g.addColorStop(1,"#5a6f8c");x.fillStyle=g;x.fillRect(0,130,480,150);
+  x.fillStyle="#3d5a28";x.fillRect(0,280,480,40);
+  const id=x.getImageData(0,0,480,320),dd=id.data;
+  for(let i=0;i<dd.length;i+=4){const nz=(Math.random()-.5)*24;dd[i]+=nz;dd[i+1]+=nz;dd[i+2]+=nz}
+  x.putImageData(id,0,0);files=[];$("sel").innerHTML="<option>contoh-sintetis</option>";
+  setBase(c,480,320,"contoh-sintetis",480,320);
+};
+</script>
+</body>
+</html>
