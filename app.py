@@ -69,65 +69,146 @@ def preprocessing(img, jenis="Gaussian Blur", ukuran=5):
     return cv2.GaussianBlur(img, (ukuran, ukuran), 0)
 
 
-def segmentasi_air(img_blur, p):
-    hsv = cv2.cvtColor(img_blur, cv2.COLOR_BGR2HSV)
-    bawah = np.array([p["h_min"], p["s_min"], p["v_min"]], dtype=np.uint8)
-    atas = np.array([p["h_max"], p["s_max"], p["v_max"]], dtype=np.uint8)
+def segmentasi_air(img_blur_bgr, p):
+    hsv = cv2.cvtColor(img_blur_bgr, cv2.COLOR_BGR2HSV)
+
+    bawah = np.array([
+        p["h_min"], p["s_min"], p["v_min"]
+    ], dtype=np.uint8)
+
+    atas = np.array([
+        p["h_max"], p["s_max"], p["v_max"]
+    ], dtype=np.uint8)
+
     mask = cv2.inRange(hsv, bawah, atas)
-    k = max(1, min(31, int(p["kernel"])))
-    if k % 2 == 0:
-        k += 1
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    # Menghilangkan area bagian atas gambar (40%)
+    h, w = mask.shape
+    mask[0:int(h * 0.4), :] = 0
+
+    k_open = max(1, min(31, int(p["k_open"])))
+    k_close = max(1, min(31, int(p["k_close"])))
+
+    if k_open % 2 == 0:
+        k_open += 1
+
+    if k_close % 2 == 0:
+        k_close += 1
+
+    kernel_open = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (k_open, k_open)
+    )
+
+    kernel_close = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (k_close, k_close)
+    )
+
+    mask = cv2.morphologyEx(
+        mask, cv2.MORPH_OPEN, kernel_open
+    )
+
+    mask = cv2.morphologyEx(
+        mask, cv2.MORPH_CLOSE, kernel_close
+    )
+
     return mask
 
 
 def ekstraksi_fitur(img, mask, p):
     air = cv2.bitwise_and(img, img, mask=mask)
+
     mean_b, mean_g, mean_r, _ = cv2.mean(img, mask=mask)
+
     gray = cv2.cvtColor(air, cv2.COLOR_BGR2GRAY)
 
     if p["normalisasi"] and cv2.countNonZero(mask) > 0:
         nilai = gray[mask > 0]
-        lo, hi = float(nilai.min()), float(nilai.max())
-        if hi > lo:
-            gray = np.clip((gray.astype(np.float32) - lo) / (hi - lo) * 255, 0, 255).astype(np.uint8)
+
+        if nilai.size > 0:
+            lo, hi = np.percentile(
+                nilai.astype(np.float32), [2, 98]
+            )
+
+            if hi > lo:
+                gray = np.clip(
+                    (gray.astype(np.float32) - lo) / (hi - lo) * 255,
+                    0, 255
+                ).astype(np.uint8)
 
     if p["balik"]:
         gray = 255 - gray
 
     false = cv2.applyColorMap(gray, COLORMAPS[p["cmap"]])
     false[mask == 0] = 0
+
     return air, false, (mean_r, mean_g, mean_b)
 
+def deteksi_objek(img, mask):
+    hasil = img.copy()
 
-def analisis_statistik(mask, rgb):
-    total = int(mask.shape[0] * mask.shape[1])
-    pixel_air = int(cv2.countNonZero(mask))
-    r, g, b = rgb
-    if pixel_air == 0:
-        return {
-            "persen": 0.0, "pixel_air": 0, "total": total,
-            "r": 0.0, "g": 0.0, "b": 0.0, "brightness": 0.0,
-            "interpretasi": "Area air tidak terdeteksi — sesuaikan rentang HSV.",
-            "warna": "#64748b"
-        }
+    kontur, _ = cv2.findContours(
+        mask.copy(),
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE
+    )
 
-    brightness = (r + g + b) / 3
-    if brightness > 150:
-        interpretasi, warna = "Cenderung Jernih secara visual", "#16845b"
-    elif brightness >= 80:
-        interpretasi, warna = "Indikasi visual Bagus", "#b7791f"
+    jumlah_objek = 0
+
+    for c in kontur:
+        if cv2.contourArea(c) > 20:
+
+            # Kontur kuning
+            cv2.drawContours(
+                hasil, [c], -1, (0, 255, 255), 2
+            )
+
+            # Bounding box merah
+            x, y, w, h = cv2.boundingRect(c)
+
+            cv2.rectangle(
+                hasil,
+                (x, y),
+                (x + w, y + h),
+                (0, 0, 255),
+                2
+            )
+
+            jumlah_objek += 1
+
+    return hasil, jumlah_objek
+
+
+def analisis_statistik(img, mask):
+    total_pixel = mask.shape[0] * mask.shape[1]
+    pixel_air = cv2.countNonZero(mask)
+
+    persen = (pixel_air / total_pixel) * 100 if total_pixel else 0
+
+    if pixel_air > 0:
+        mean_b, mean_g, mean_r, _ = cv2.mean(img, mask=mask)
+
+        brightness = (mean_r + mean_g + mean_b) / 3
+
+        if brightness > 150:
+            interpretasi = "Cenderung Jernih"
+        elif brightness >= 80:
+            interpretasi = "Cenderung Sedang"
+        else:
+            interpretasi = "Cenderung Keruh"
     else:
-        interpretasi, warna = "Cenderung Gelap/Keruh secara visual", "#c2413b"
+        mean_r = mean_g = mean_b = brightness = 0
+        interpretasi = "Area air tidak terdeteksi"
 
     return {
-        "persen": pixel_air / total * 100, "pixel_air": pixel_air, "total": total,
-        "r": r, "g": g, "b": b, "brightness": brightness,
-        "interpretasi": interpretasi, "warna": warna
+        "persen": round(persen, 2),
+        "pixel_air": pixel_air,
+        "total": total_pixel,
+        "r": round(mean_r, 2),
+        "g": round(mean_g, 2),
+        "b": round(mean_b, 2),
+        "brightness": round(brightness, 2),
+        "interpretasi": interpretasi
     }
-
 
 def encode_image(img, ext=".jpg"):
     if ext == ".png":
@@ -178,10 +259,15 @@ def uploaded_file(filename):
 @app.route("/api/process", methods=["POST"])
 def api_process():
     d = request.get_json(silent=True) or {}
+
     try:
         rel = d.get("image", "")
+
         if rel.startswith("uploads/"):
-            image_path = (UPLOAD_DIR / rel.removeprefix("uploads/")).resolve()
+            image_path = (
+                UPLOAD_DIR / rel.removeprefix("uploads/")
+            ).resolve()
+
             if UPLOAD_DIR.resolve() not in image_path.parents or not image_path.is_file():
                 return jsonify(error="File upload tidak ditemukan."), 404
         else:
@@ -192,36 +278,85 @@ def api_process():
         def angka(k, mx):
             return max(0, min(mx, int(d.get(k, 0))))
 
+        # Parameter segmentasi
         p = {
-            "h_min": angka("h_min", 179), "h_max": angka("h_max", 179),
-            "s_min": angka("s_min", 255), "s_max": angka("s_max", 255),
-            "v_min": angka("v_min", 255), "v_max": angka("v_max", 255),
-            "kernel": angka("kernel", 15),
+            "h_min": angka("h_min", 179),
+            "h_max": angka("h_max", 179),
+
+            "s_min": angka("s_min", 255),
+            "s_max": angka("s_max", 255),
+
+            "v_min": angka("v_min", 255),
+            "v_max": angka("v_max", 255),
+
+            "k_open": angka("k_open", 7),
+            "k_close": angka("k_close", 9),
+
             "cmap": d.get("cmap", "COLORMAP_JET"),
+
             "normalisasi": bool(d.get("normalisasi", True)),
-            "balik": bool(d.get("balik", True)),
+            "balik": bool(d.get("balik", True))
         }
+
+        # Validasi parameter
         if p["cmap"] not in COLORMAPS:
             return jsonify(error="Colormap tidak dikenal."), 400
-        if p["h_min"] > p["h_max"] or p["s_min"] > p["s_max"] or p["v_min"] > p["v_max"]:
+
+        if (
+            p["h_min"] > p["h_max"]
+            or p["s_min"] > p["s_max"]
+            or p["v_min"] > p["v_max"]
+        ):
             return jsonify(error="Nilai MIN tidak boleh lebih besar dari MAX."), 400
 
-        ukuran_filter = max(1, min(31, int(d.get("ukuran_filter", 5))))
-        blur = preprocessing(img, d.get("filter", "Gaussian Blur"), ukuran_filter)
-        mask = segmentasi_air(blur, p)
-        air, false, rgb = ekstraksi_fitur(img, mask, p)
-        h, w = img.shape[:2]
-        stat = analisis_statistik(mask, rgb)
-
-        return jsonify(
-            asli=encode_image(img), mask=encode_image(mask, ".png"),
-            air=encode_image(air), false=encode_image(false),
-            info={"nama": Path(rel).name, "lebar": w, "tinggi": h,
-                  "channel": 3, "asli": f"{w0} × {h0}"},
-            stat=stat
+        # Preprocessing
+        ukuran_filter = max(
+            1, min(31, int(d.get("ukuran_filter", 5)))
         )
+
+        blur = preprocessing(
+            img,
+            d.get("filter", "Gaussian Blur"),
+            ukuran_filter
+        )
+
+        # Segmentasi HSV dan morfologi
+        mask = segmentasi_air(blur, p)
+
+        # Ekstraksi fitur
+        air, false, rgb = ekstraksi_fitur(img, mask, p)
+
+        # Deteksi objek
+        hasil_deteksi, jumlah_objek = deteksi_objek(img, mask)
+
+        # Analisis statistik
+        stat = analisis_statistik(img, mask)
+
+        h, w = img.shape[:2]
+
+        # Mengirim hasil ke website
+        return jsonify(
+            asli=encode_image(img),
+            mask=encode_image(mask, ".png"),
+            air=encode_image(air),
+            false=encode_image(false),
+            deteksi=encode_image(hasil_deteksi),
+
+            info={
+                "nama": Path(rel).name,
+                "lebar": w,
+                "tinggi": h,
+                "channel": 3,
+                "asli": f"{w0} × {h0}"
+            },
+
+            stat=stat,
+            jumlah_objek=jumlah_objek
+        )
+
     except FileNotFoundError as e:
         return jsonify(error=str(e)), 404
+
     except Exception as e:
         app.logger.exception("Gagal memproses gambar")
         return jsonify(error=f"Gagal memproses gambar: {e}"), 500
